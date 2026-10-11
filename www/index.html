@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vario">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Thermik Vario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;600&display=swap">
+<style>
+/* Layout im Stil eines Naviter-Fluginstruments (SeeYou Navigator / Nimo): schwarzer Grund, Datenboxen mit Haarlinien,
+   Variobalken am rechten Rand, Seiten wischen (Flug · Thermik · Menü), Statuszeile oben, Seitenleiste unten.
+   Bewusst dunkel als Grundzustand; Hell lässt sich in den Einstellungen wählen. */
+:root {
+  --bg: #000000; --box: #0b0e11; --ink: #ffffff; --muted: #8b96a1; --line: #262d34;
+  --climb: #34d27b; --sink: #ff5a4e; --accent: #2fa4ff; --accent-ink: #001424; --warn: #ffc23d;
+  --f-num: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --box: #f4f6f8; --ink: #05080b; --muted: #59636d; --line: #c9d0d6;
+  --climb: #0a8c48; --sink: #d0302a; --accent: #0a6fd1; --accent-ink: #ffffff; --warn: #9a6400;
+  color-scheme: light;
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; -webkit-tap-highlight-color: transparent; overflow: hidden; }
+.app { max-width: 560px; height: 100%; margin: 0 auto; display: flex; flex-direction: column; box-sizing: border-box; }
+
+/* Statuszeile */
+.status { display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--line); font: 600 14px/1 var(--f-num); font-variant-numeric: tabular-nums; color: var(--muted); }
+.status .clock { color: var(--ink); font-size: 16px; }
+.status .src { letter-spacing: .06em; text-transform: uppercase; }
+.status .src.sim { color: var(--warn); } .status .src.live { color: var(--climb); }
+.status .rec { display: none; align-items: center; gap: 5px; color: var(--sink); }
+.status .rec.on { display: inline-flex; }
+.status .rec::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sink); }
+.status .spacer { flex: 1; }
+.iconbtn { background: none; border: 0; color: var(--ink); padding: 6px; min-width: 40px; min-height: 36px; cursor: pointer; display: inline-grid; place-items: center; border-radius: 6px; }
+.iconbtn svg { width: 22px; height: 22px; }
+.iconbtn.off { color: var(--muted); }
+
+/* Seiten + Variobalken */
+.screen { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 40px; }
+.pages { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; min-height: 0; }
+.pages::-webkit-scrollbar { display: none; }
+.page { flex: 0 0 100%; scroll-snap-align: start; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+/* Datenboxen (Navboxen) */
+.boxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); flex: 1; }
+.nb { background: var(--bg); padding: 6px 10px 8px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; min-height: 74px; }
+.nb .k { font: 600 12px/1.1 var(--f-body); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb .v { font: 600 44px/1 var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.nb .v small { font-size: 16px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+.nb.wide { grid-column: span 2; }
+.nb.hero .v { font-size: clamp(88px, 28vw, 140px); font-weight: 700; letter-spacing: -0.02em; line-height: .9; }
+.up { color: var(--climb); } .down { color: var(--sink); }
+
+/* Variobalken rechts */
+.bar { position: relative; border-left: 1px solid var(--line); background: var(--box); }
+.bar .tick { position: absolute; right: 0; width: 40px; border-top: 1px solid var(--line); }
+.bar .tick.major { border-top-color: var(--muted); }
+.bar .tick span { position: absolute; left: 3px; top: 1px; font: 600 11px/1 var(--f-num); color: var(--muted); }
+.bar .zero { border-top: 2px solid var(--ink); }
+.bar .fill { position: absolute; right: 0; width: 22px; transition: top .15s, height .15s; }
+.bar .avg { position: absolute; right: 22px; width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-right: 10px solid var(--ink); margin-top: -7px; transition: top .3s; }
+
+/* Thermik-Seite */
+.ta { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; }
+.ta canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; }
+.ov { position: absolute; padding: 6px 10px; background: color-mix(in srgb, var(--bg) 70%, transparent); border-radius: 4px; }
+.ov .k { font: 600 11px/1.1 var(--f-body); color: var(--muted); }
+.ov .v { font: 600 34px/1 var(--f-num); font-variant-numeric: tabular-nums; }
+.ov .v small { font-size: 14px; color: var(--muted); margin-left: 2px; }
+.ov.tl { left: 6px; top: 6px; } .ov.tr { right: 6px; top: 6px; text-align: right; }
+.ov.bl { left: 6px; bottom: 6px; } .ov.br { right: 6px; bottom: 6px; text-align: right; }
+
+/* Menü-Seite */
+.menu { padding: 12px 16px 16px; display: grid; gap: 14px; align-content: start; }
+.menu h3 { margin: 0; font: 600 12px/1 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.mgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+button { font: 600 15px/1.1 var(--f-body); color: var(--ink); background: var(--box); border: 1px solid var(--line); border-radius: 6px; padding: 12px; cursor: pointer; min-height: 48px; text-align: left; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.on { border-color: var(--climb); color: var(--climb); }
+button:disabled { opacity: .4; cursor: default; }
+.note { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0; }
+.note b { color: var(--ink); }
+
+/* Seitenleiste unten */
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+.tabs button { background: none; border: 0; border-radius: 0; text-align: center; color: var(--muted); font: 600 13px/1 var(--f-body); letter-spacing: .06em; text-transform: uppercase; padding: 10px 4px 12px; min-height: 44px; position: relative; }
+.tabs button[aria-selected="true"] { color: var(--ink); }
+.tabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 30%; right: 30%; top: -1px; height: 3px; background: var(--accent); }
+
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--box); color: var(--ink); padding: 18px; width: min(480px, calc(100vw - 32px)); box-sizing: border-box; }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog h2 { margin: 0 0 12px; font: 700 22px/1.1 var(--f-num); }
+.form { display: grid; gap: 12px; }
+.form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.form input { font: 500 16px var(--f-body); padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.row button { text-align: center; }
+textarea { width: 100%; box-sizing: border-box; height: 180px; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+@media (prefers-reduced-motion: reduce) { .bar .fill, .bar .avg { transition: none; } .pages { scroll-behavior: auto; } }
+</style>
+
+<div class="app">
+  <div class="status">
+    <span class="clock" id="clock">--:--</span>
+    <span class="src sim" id="srcChip">Simulation</span>
+    <span id="accChip">±– m</span>
+    <span class="rec" id="recInd"><span id="timeChip">00:00</span></span>
+    <span class="spacer"></span>
+    <button class="iconbtn off" id="soundBtn" aria-pressed="false" aria-label="Vario-Ton einschalten">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path id="soundWaves" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" opacity="0"/><path id="soundX" d="M17 9l5 6M22 9l-5 6"/></svg>
+    </button>
+    <button class="iconbtn" id="setBtn" aria-label="Einstellungen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+  </div>
+
+  <div class="screen">
+    <div class="pages" id="pages">
+      <section class="page" id="pFlight" aria-label="Flug">
+        <div class="boxes">
+          <div class="nb wide hero"><div class="k">Vario m/s</div><div class="v" id="vario">0.0</div></div>
+          <div class="nb"><div class="k">Ø Steigen 30 s</div><div class="v" id="avg30">0.0</div></div>
+          <div class="nb"><div class="k">Flugzeit</div><div class="v" id="ftime">0:00</div></div>
+          <div class="nb"><div class="k">Höhe</div><div class="v" id="alt">–<small>m</small></div></div>
+          <div class="nb"><div class="k">Höhe über Start</div><div class="v" id="agl">–<small>m</small></div></div>
+          <div class="nb"><div class="k">Geschwindigkeit</div><div class="v" id="spd">–<small>km/h</small></div></div>
+          <div class="nb"><div class="k">Kurs</div><div class="v" id="hdg">–<small>°</small></div></div>
+          <div class="nb"><div class="k">Wind km/h</div><div class="v" id="wind">–</div></div>
+          <div class="nb"><div class="k">Gleitzahl</div><div class="v" id="ld">–</div></div>
+        </div>
+      </section>
+
+      <section class="page" id="pThermal" aria-label="Thermik">
+        <div class="ta">
+          <canvas id="ta" width="600" height="600" aria-label="Flugspur der letzten 90 Sekunden, eingefärbt nach Steigen"></canvas>
+          <div class="ov tl"><div class="k">Vario</div><div class="v" id="vario2">0.0</div></div>
+          <div class="ov tr"><div class="k">Ø 30 s</div><div class="v" id="avg2">0.0</div></div>
+          <div class="ov bl"><div class="k">Höhe</div><div class="v" id="alt2">–</div></div>
+          <div class="ov br"><div class="k" id="taScale">Ring 50 m</div><div class="v" id="wind2">–</div></div>
+        </div>
+      </section>
+
+      <section class="page" id="pMenu" aria-label="Menü">
+        <div class="menu">
+          <h3>Datenquelle</h3>
+          <div class="mgrid">
+            <button class="primary" id="gpsBtn">GPS starten</button>
+            <button id="bleBtn">BLE-Vario koppeln</button>
+            <button id="simBtn" class="on">Simulation</button>
+            <button id="zeroBtn">Startplatz = hier</button>
+          </div>
+          <h3>Flug</h3>
+          <div class="mgrid">
+            <button id="recBtn">Aufzeichnen</button>
+            <button id="igcBtn" disabled>IGC exportieren</button>
+          </div>
+          <p class="note" id="note"></p>
+        </div>
+      </section>
+    </div>
+    <div class="bar" id="bar" aria-hidden="true"></div>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-p="0">Flug</button>
+    <button role="tab" aria-selected="false" data-p="1">Thermik</button>
+    <button role="tab" aria-selected="false" data-p="2">Menü</button>
+  </nav>
+</div>
+
+<dialog id="setDlg">
+  <h2>Einstellungen</h2>
+  <form class="form" id="setForm" method="dialog">
+    <label for="sClimb">Steigton ab (m/s)<input id="sClimb" type="number" step="0.1" inputmode="decimal"></label>
+    <label for="sSink">Sinkalarm ab (m/s)<input id="sSink" type="number" step="0.1" inputmode="decimal"></label>
+    <label for="sVol">Lautstärke (0–100)<input id="sVol" type="number" min="0" max="100" step="5" inputmode="numeric"></label>
+    <label for="sQnh">QNH für BLE-Sensor (hPa)<input id="sQnh" type="number" step="0.1" inputmode="decimal"></label>
+    <label for="sPilot">Pilot (für IGC)<input id="sPilot" type="text" autocomplete="name"></label>
+    <label for="sGlider">Schirm (für IGC)<input id="sGlider" type="text"></label>
+    <div class="row"><button id="themeBtn" type="button">Hell/Dunkel</button><button class="primary" id="setSave" value="ok">Übernehmen</button></div>
+  </form>
+</dialog>
+
+<dialog id="igcDlg">
+  <h2>IGC-Datei</h2>
+  <p class="note" id="igcInfo"></p>
+  <textarea id="igcText" readonly></textarea>
+  <div class="row" style="margin-top:10px"><button id="igcCopy" type="button">Kopieren</button><button id="igcSave" type="button">Speichern</button><button class="primary" id="igcClose" type="button">Schließen</button></div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const G = 9.80665;
+
+/* ---------- Einstellungen (nur lokal im Browser) ---------- */
+const DEF = { climb: 0.2, sink: -2.0, vol: 60, qnh: 1013.25, pilot: '', glider: '', theme: '' };
+let S = { ...DEF };
+try { Object.assign(S, JSON.parse(localStorage.getItem('vario.settings') || '{}')); } catch (e) {}
+const saveS = () => { try { localStorage.setItem('vario.settings', JSON.stringify(S)); } catch (e) {} };
+if (S.theme) document.documentElement.dataset.theme = S.theme;
+
+/* ---------- Kalman-Filter: Zustand [Höhe, Steigen], Eingang Vertikalbeschleunigung ---------- */
+const kf = {
+  h: 0, v: 0, P: [[100, 0], [0, 10]], t: null, init: false,
+  qa: 1.2, // Prozessrauschen (m/s²), kleiner wenn Beschleunigungssensor genutzt wird
+  advance(t, a) {
+    if (this.t === null) { this.t = t; return; }
+    let dt = (t - this.t) / 1000; if (dt <= 0) return; if (dt > 2) dt = 2; this.t = t;
+    this.h += this.v * dt + 0.5 * a * dt * dt; this.v += a * dt;
+    const q = this.qa * this.qa, dt2 = dt * dt, dt3 = dt2 * dt, dt4 = dt3 * dt;
+    const [[p00, p01], [p10, p11]] = this.P;
+    const n00 = p00 + dt * (p10 + p01) + dt2 * p11 + q * dt4 / 4;
+    const n01 = p01 + dt * p11 + q * dt3 / 2;
+    const n11 = p11 + q * dt2;
+    this.P = [[n00, n01], [n01, n11]];
+  },
+  update(z, R) {
+    if (!this.init) { this.h = z; this.v = 0; this.P = [[R, 0], [0, 1]]; this.init = true; return; }
+    const [[p00, p01], [p10, p11]] = this.P, s = p00 + R, k0 = p00 / s, k1 = p10 / s, y = z - this.h;
+    this.h += k0 * y; this.v += k1 * y;
+    this.P = [[(1 - k0) * p00, (1 - k0) * p01], [p10 - k1 * p00, p11 - k1 * p01]];
+  },
+  reset() { this.t = null; this.init = false; this.v = 0; }
+};
+
+/* ---------- Beschleunigungssensor: Vertikalanteil über Tiefpass-Schwerkraftrichtung ---------- */
+let gLP = null, aUp = 0, accelOn = false, accelSeen = 0;
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity; if (!a || a.x == null) return;
+  const v = [a.x, a.y, a.z];
+  if (!gLP) { gLP = v.slice(); return; }
+  for (let i = 0; i < 3; i++) gLP[i] += 0.02 * (v[i] - gLP[i]);
+  const gm = Math.hypot(gLP[0], gLP[1], gLP[2]); if (gm < 5) return;
+  // Vorzeichenunabhängig: Projektion auf die eigene Schwerkraftrichtung
+  let up = (v[0] * gLP[0] + v[1] * gLP[1] + v[2] * gLP[2]) / gm - gm;
+  up = Math.max(-6, Math.min(6, up));
+  aUp += 0.3 * (up - aUp);
+  accelSeen++;
+  if (source !== 'sim' && kf.init) kf.advance(performance.now(), aUp);
+}
+async function enableAccel() {
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const r = await DeviceMotionEvent.requestPermission(); if (r !== 'granted') return false;
+    }
+    window.addEventListener('devicemotion', onMotion); accelOn = true; return true;
+  } catch (e) { return false; }
+}
+
+/* ---------- Gemeinsame Messwert-Pipeline ---------- */
+let source = 'sim';
+let fix = null;           // letzte Position {lat, lon, alt, acc, spd, hdg, t}
+let baroAlt = null;       // Druckhöhe (BLE-Sensor / Simulation)
+let origin = null, takeoffAlt = null;
+let baroSrc = false, altOffset = null; // baroSrc: Höhe kommt vom Barometer (Handy oder BLE)
+const hist = [];          // 1-Hz-Verlauf {t, h, x, y, v, gs, trk}
+let lastHistT = 0;
+
+function altMeasurement(h, R, t) {
+  const a = (accelOn && source !== 'sim' && accelSeen > 20) ? aUp : 0;
+  kf.qa = a !== 0 ? 0.6 : (R < 1 ? 1.5 : 0.9);
+  kf.advance(t, a); kf.update(h, R);
+}
+function toXY(lat, lon) {
+  if (!origin) origin = { lat, lon };
+  return { x: (lon - origin.lon) * Math.cos(origin.lat * Math.PI / 180) * 111320, y: (lat - origin.lat) * 110540 };
+}
+function onFix(f) {
+  const p = toXY(f.lat, f.lon);
+  let gs = f.spd, trk = f.hdg;
+  const prev = hist[hist.length - 1];
+  if (prev && (gs == null || isNaN(gs) || trk == null || isNaN(trk))) {
+    const dt = (f.t - prev.t) / 1000;
+    if (dt > 0.3) { const dx = p.x - prev.x, dy = p.y - prev.y; gs = Math.hypot(dx, dy) / dt; trk = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360; }
+  }
+  f.spd = gs || 0; f.hdg = trk == null || isNaN(trk) ? (prev ? prev.trk : 0) : trk;
+  fix = f;
+  if (!baroSrc && f.alt != null) altMeasurement(f.alt, Math.max(9, (f.altAcc || 8) ** 2), f.t);
+  // Barometerhöhe einmalig an die GPS-Höhe angleichen (Anzeige), das Steigen bleibt rein barometrisch
+  if (baroSrc && altOffset == null && kf.init && f.alt != null && (f.altAcc || 99) < 20 && source !== 'sim') altOffset = f.alt - kf.h;
+  if (takeoffAlt == null && kf.init) takeoffAlt = kf.h;
+  if (f.t - lastHistT >= 900) {
+    lastHistT = f.t;
+    hist.push({ t: f.t, h: kf.h, x: p.x, y: p.y, v: kf.v, gs: f.spd, trk: f.hdg, lat: f.lat, lon: f.lon, galt: f.alt, palt: baroAlt });
+    while (hist.length && f.t - hist[0].t > 180000) hist.shift();
+    flightLogic(f);
+  }
+}
+
+/* ---------- GPS ---------- */
+let geoWatch = null;
+function startGPS() {
+  if (!('geolocation' in navigator)) { note('Dieses Gerät oder diese Ansicht gibt keinen Standort frei.'); return; }
+  stopAll(); setSource('gps');
+  enableAccel();
+  geoWatch = navigator.geolocation.watchPosition(pos => {
+    const c = pos.coords;
+    onFix({ lat: c.latitude, lon: c.longitude, alt: c.altitude, altAcc: c.altitudeAccuracy, acc: c.accuracy,
+            spd: c.speed, hdg: c.heading, t: performance.now(), utc: pos.timestamp });
+    $('accChip').textContent = '±' + Math.round(c.accuracy) + ' m' + (c.altitude == null ? ' · keine Höhe' : '');
+  }, err => {
+    note(err.code === 1 ? 'Standortfreigabe wurde abgelehnt. In den Browser-Einstellungen erlauben und erneut starten.' : 'Kein GPS-Empfang: ' + err.message);
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  wake();
+  note('GPS aktiv. ' + (accelOn ? 'Beschleunigungssensor hilft beim schnellen Ansprechen. ' : '') + 'Ohne Barometer stammt das Steigen aus der GPS-Höhe und ist um 1–3 s verzögert.');
+  if (NATIVE) startNativeBaro().then(ok => {
+    if (ok) { setSource('baro'); note('Eingebautes Barometer aktiv' + (nbInfo.name ? ' (' + nbInfo.name + ')' : '') + '. Das Steigen kommt vom Luftdruck, Position und Speed vom GPS. Die Höhe wird beim ersten guten GPS-Fix angeglichen.'); }
+    else note('Dieses Handy hat kein Barometer. Das Steigen kommt aus GPS-Höhe und Beschleunigungssensor und reagiert 1–3 s verzögert.');
+  });
+}
+
+/* ---------- Eingebautes Handy-Barometer (nur in der Android-App, über das native Plugin) ---------- */
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const NB = NATIVE ? (window.Capacitor.Plugins.Barometer || (window.Capacitor.registerPlugin && window.Capacitor.registerPlugin('Barometer'))) : null;
+let nbListener = null, nbInfo = null;
+async function startNativeBaro() {
+  if (!NB) return false;
+  try {
+    nbInfo = await NB.isAvailable();
+    if (!nbInfo.available) return false;
+    nbListener = await NB.addListener('pressure', d => {
+      baroAlt = pressureToAlt(d.hPa * 100);
+      altMeasurement(baroAlt, 0.45 ** 2, performance.now());
+    });
+    await NB.start();
+    baroSrc = true;
+    return true;
+  } catch (e) { note('Barometer: ' + (e.message || e)); return false; }
+}
+function stopNativeBaro() {
+  if (!NB || !nbListener) return;
+  try { nbListener.remove(); NB.stop(); } catch (e) {}
+  nbListener = null;
+}
+
+/* ---------- Bluetooth-Vario-Sensor (LK8EX1 / BlueFly PRS über BLE-UART) ---------- */
+let bleDev = null, bleBuf = '';
+const UARTS = [
+  { svc: '6e400001-b5a3-f393-e0a9-e50e24dcca9e', chr: '6e400003-b5a3-f393-e0a9-e50e24dcca9e' }, // Nordic UART
+  { svc: 0xffe0, chr: 0xffe1 }                                                                  // HM-10 / BlueFly
+];
+async function startBLE() {
+  if (!navigator.bluetooth) { note('Web Bluetooth gibt es nur in Chrome auf Android und Desktop, nicht auf dem iPhone und nicht in dieser Vorschau.'); return; }
+  try {
+    const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: UARTS.map(u => u.svc) });
+    const gatt = await dev.gatt.connect();
+    let ch = null;
+    for (const u of UARTS) { try { ch = await (await gatt.getPrimaryService(u.svc)).getCharacteristic(u.chr); break; } catch (e) {} }
+    if (!ch) { note('Sensor verbunden, aber kein UART-Dienst gefunden.'); dev.gatt.disconnect(); return; }
+    if (source !== 'gps') startGPS(); // Position und Speed kommen weiter vom GPS
+    bleDev = dev;
+    dev.addEventListener('gattserverdisconnected', () => { note('BLE-Sensor getrennt.'); bleDev = null; baroAlt = null; baroSrc = false; kf.reset(); if (source === 'ble') setSource('gps'); });
+    await ch.startNotifications();
+    ch.addEventListener('characteristicvaluechanged', ev => {
+      bleBuf += new TextDecoder().decode(ev.target.value);
+      let i; while ((i = bleBuf.search(/[\r\n]/)) >= 0) { const line = bleBuf.slice(0, i).trim(); bleBuf = bleBuf.slice(i + 1); if (line) parseNMEA(line); }
+      if (bleBuf.length > 512) bleBuf = '';
+    });
+    kf.reset(); baroSrc = true; altOffset = null; setSource('ble');
+    note('BLE-Sensor „' + (dev.name || 'unbenannt') + '“ liefert den Luftdruck, GPS liefert Position und Geschwindigkeit.');
+  } catch (e) { if (e.name !== 'NotFoundError') note('Bluetooth: ' + e.message); }
+}
+function pressureToAlt(pa) { return 44330 * (1 - Math.pow(pa / (S.qnh * 100), 1 / 5.255)); }
+function parseNMEA(line) {
+  const t = performance.now();
+  if (line.startsWith('$LK8EX1')) {
+    const f = line.split('*')[0].split(',');
+    const p = parseFloat(f[1]), alt = parseFloat(f[2]);
+    let h = null;
+    if (p > 0 && p < 999999) h = pressureToAlt(p); else if (!isNaN(alt) && alt !== 99999) h = alt;
+    if (h != null) { baroAlt = h; altMeasurement(h, 0.35 ** 2, t); }
+  } else if (/^PRS\s/.test(line)) { // BlueFly: Druck in Pa als Hex
+    const p = parseInt(line.slice(4), 16); if (p > 0) { baroAlt = pressureToAlt(p); altMeasurement(baroAlt, 0.35 ** 2, t); }
+  }
+}
+
+/* ---------- Simulation: Thermik mit Wind, 10-Hz-Baro, 1-Hz-GPS ---------- */
+const SIM = { lat0: 47.5668, lon0: 10.7752 }; // Startplatz Tegelberg (Beispiel)
+let sim = null, simTimer = null;
+function startSim() {
+  stopAll(); setSource('sim');
+  sim = { x: -260, y: -40, h: 1730, hd: 70, t: 0, phase: 'glide', phaseT: 0, wind: { x: 2.6, y: 0.4 }, core: { x: 0, y: 0 }, lastGps: -1 };
+  let last = performance.now();
+  simTimer = setInterval(() => {
+    const now = performance.now(), dt = Math.min(0.2, (now - last) / 1000); last = now; stepSim(dt, now);
+  }, 100);
+  note(null);
+}
+function thermalLift(x, y) { const d = Math.hypot(x - sim.core.x, y - sim.core.y); return 3.4 * Math.exp(-(d * d) / (2 * 45 * 45)); }
+function stepSim(dt, now) {
+  sim.t += dt; sim.phaseT += dt;
+  sim.core.x += sim.wind.x * dt; sim.core.y += sim.wind.y * dt;
+  const lift = thermalLift(sim.x, sim.y);
+  if (sim.phase === 'glide') {
+    const dx = sim.core.x - sim.x, dy = sim.core.y - sim.y;
+    const want = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    let d = ((want - sim.hd + 540) % 360) - 180; sim.hd += Math.max(-20 * dt, Math.min(20 * dt, d));
+    if (lift > 1.2) { sim.phase = 'circle'; sim.phaseT = 0; }
+  } else {
+    sim.hd = (sim.hd + 360 / 22 * dt) % 360; // Vollkreis in 22 s
+    // langsam zum Kern zentrieren
+    const ahead = { x: sim.x + Math.sin(sim.hd * Math.PI / 180) * 20, y: sim.y + Math.cos(sim.hd * Math.PI / 180) * 20 };
+    if (thermalLift(ahead.x, ahead.y) > lift) sim.hd -= 4 * dt;
+    if (sim.phaseT > 150) { sim.phase = 'glide'; sim.phaseT = 0; sim.core.x = sim.x + 420 + Math.random() * 120; sim.core.y = sim.y + (Math.random() - 0.5) * 300; }
+  }
+  const air = 10.2, r = sim.hd * Math.PI / 180;
+  const vx = Math.sin(r) * air + sim.wind.x, vy = Math.cos(r) * air + sim.wind.y;
+  sim.x += vx * dt; sim.y += vy * dt;
+  const sinkAir = sim.phase === 'circle' ? 1.25 : 1.1;
+  const turb = (Math.random() - 0.5) * 0.6;
+  sim.h += (lift - sinkAir + turb * 0.4) * dt;
+  // Barometer 10 Hz mit 0,25 m Rauschen
+  baroAlt = sim.h + (Math.random() - 0.5) * 0.5;
+  altMeasurement(baroAlt, 0.3 ** 2, now);
+  if (Math.floor(sim.t) !== sim.lastGps) {
+    sim.lastGps = Math.floor(sim.t);
+    const lat = SIM.lat0 + sim.y / 110540, lon = SIM.lon0 + sim.x / (111320 * Math.cos(SIM.lat0 * Math.PI / 180));
+    onFix({ lat, lon, alt: sim.h + 6 + (Math.random() - 0.5) * 6, acc: 4, spd: Math.hypot(vx, vy), hdg: (Math.atan2(vx, vy) * 180 / Math.PI + 360) % 360, t: now, utc: Date.now() });
+    $('accChip').textContent = '±4 m';
+  }
+}
+
+function stopAll() {
+  if (simTimer) { clearInterval(simTimer); simTimer = null; }
+  if (geoWatch != null) { navigator.geolocation.clearWatch(geoWatch); geoWatch = null; }
+  if (bleDev) { try { bleDev.gatt.disconnect(); } catch (e) {} bleDev = null; }
+  stopNativeBaro(); baroSrc = false; altOffset = null;
+  kf.reset(); baroAlt = null; fix = null; origin = null; takeoffAlt = null; hist.length = 0; lastHistT = 0;
+  wind = null; recStop(true);
+}
+function setSource(s) {
+  source = s;
+  const c = $('srcChip'); c.textContent = { sim: 'Simulation', gps: 'GPS', ble: 'BLE-Baro + GPS', baro: 'Baro + GPS' }[s]; c.className = 'src ' + (s === 'sim' ? 'sim' : 'live');
+  $('simBtn').classList.toggle('on', s === 'sim'); $('gpsBtn').classList.toggle('on', s === 'gps' || s === 'baro'); $('bleBtn').classList.toggle('on', s === 'ble');
+}
+function note(t) {
+  if (t == null) { $('note').innerHTML = 'Läuft gerade als <b>Simulation</b> einer Thermik mit Westwind. Tippe oben auf das <b>Lautsprecher-Symbol</b>, um den Vario-Ton zu hören. Wische zwischen <b>Flug</b>, <b>Thermik</b> und <b>Menü</b>. Für echte Daten <b>GPS starten</b> (ohne Barometer reagiert das Vario träger) oder einen Bluetooth-Vario-Sensor koppeln.'; return; }
+  $('note').textContent = t;
+}
+
+/* ---------- Wind aus Kreisflug ---------- */
+let wind = null;
+function estimateWind() {
+  if (hist.length < 12) return;
+  let turn = 0, i = hist.length - 1;
+  for (; i > 0 && hist[hist.length - 1].t - hist[i].t < 60000; i--) {
+    turn += ((hist[i].trk - hist[i - 1].trk + 540) % 360) - 180;
+    if (Math.abs(turn) >= 360) break;
+  }
+  if (Math.abs(turn) < 360) return;
+  let sx = 0, sy = 0, n = 0;
+  for (let j = i; j < hist.length; j++) { const r = hist[j].trk * Math.PI / 180; sx += Math.sin(r) * hist[j].gs; sy += Math.cos(r) * hist[j].gs; n++; }
+  const wx = sx / n, wy = sy / n, sp = Math.hypot(wx, wy);
+  const from = (Math.atan2(wx, wy) * 180 / Math.PI + 180) % 360;
+  wind = { sp, from, wx, wy, t: hist[hist.length - 1].t };
+}
+
+/* ---------- Flug erkennen und aufzeichnen ---------- */
+let rec = null, lastRec = null, fastSince = null, slowSince = null;
+function flightLogic(f) {
+  estimateWind();
+  const t = f.t;
+  if (!rec) {
+    if (f.spd > 4.5) { fastSince = fastSince || t; if (t - fastSince > 8000) recStart(true); } else fastSince = null;
+  } else {
+    rec.fixes.push({ utc: f.utc || Date.now(), lat: f.lat, lon: f.lon, galt: f.alt, palt: baroAlt });
+    if (rec.auto && f.spd < 1.5 && Math.abs(kf.v) < 0.3) { slowSince = slowSince || t; if (t - slowSince > 30000) recStop(); } else slowSince = null;
+  }
+}
+function recStart(auto) {
+  rec = { start: Date.now(), auto, fixes: [], src: source, baro: source !== 'gps' };
+  $('recBtn').textContent = 'Stopp'; $('recBtn').classList.add('on'); $('recInd').classList.add('on');
+  if (kf.init && takeoffAlt == null) takeoffAlt = kf.h;
+}
+function recStop(silent) {
+  if (!rec) return;
+  if (rec.fixes.length > 1) lastRec = rec;
+  rec = null; fastSince = slowSince = null;
+  $('recBtn').textContent = 'Aufzeichnen'; $('recBtn').classList.remove('on'); $('recInd').classList.remove('on');
+  $('igcBtn').disabled = !lastRec;
+  if (!silent && lastRec) note('Flug beendet: ' + lastRec.fixes.length + ' Punkte. Mit „IGC export“ speichern.');
+}
+
+/* ---------- IGC-Export ---------- */
+const pad = (n, w) => String(Math.round(n)).padStart(w, '0');
+function igcLat(v) { const a = Math.abs(v), d = Math.floor(a), m = (a - d) * 60; return pad(d, 2) + pad(Math.floor(m * 1000), 5) + (v >= 0 ? 'N' : 'S'); }
+function igcLon(v) { const a = Math.abs(v), d = Math.floor(a), m = (a - d) * 60; return pad(d, 3) + pad(Math.floor(m * 1000), 5) + (v >= 0 ? 'E' : 'W'); }
+function igcAlt(h) { if (h == null || isNaN(h)) return '00000'; h = Math.round(h); return h < 0 ? '-' + pad(-h, 4) : pad(h, 5); }
+function buildIGC(r) {
+  const d = new Date(r.fixes[0].utc), L = [];
+  L.push('AXXXPWA Thermik Vario PWA');
+  L.push('HFDTEDATE:' + pad(d.getUTCDate(), 2) + pad(d.getUTCMonth() + 1, 2) + pad(d.getUTCFullYear() % 100, 2) + ',01');
+  L.push('HFPLTPILOTINCHARGE:' + (S.pilot || 'unbekannt'));
+  L.push('HFGTYGLIDERTYPE:' + (S.glider || 'unbekannt'));
+  L.push('HFDTMGPSDATUM:WGS84');
+  L.push('HFFTYFRTYPE:Thermik Vario PWA,0.1');
+  L.push('HFALGALTGPS:GEO');
+  L.push('HFALPALTPRESSURE:ISA');
+  for (const f of r.fixes) {
+    const t = new Date(f.utc);
+    L.push('B' + pad(t.getUTCHours(), 2) + pad(t.getUTCMinutes(), 2) + pad(t.getUTCSeconds(), 2) + igcLat(f.lat) + igcLon(f.lon) + 'A' + igcAlt(r.baro ? f.palt : null) + igcAlt(f.galt));
+  }
+  return L.join('\r\n') + '\r\n';
+}
+function igcName(r) { const d = new Date(r.start); return d.toISOString().slice(0, 10) + '-' + pad(d.getHours(), 2) + pad(d.getMinutes(), 2) + '.igc'; }
+function showIGC() {
+  if (!lastRec) return;
+  const txt = buildIGC(lastRec);
+  $('igcText').value = txt;
+  $('igcInfo').textContent = igcName(lastRec) + ' · ' + lastRec.fixes.length + ' Fixes' + (lastRec.src === 'sim' ? ' · aus der Simulation' : '') + '. Hochladen z. B. bei XContest oder DHV-XC.';
+  $('igcDlg').showModal();
+}
+$('igcSave').onclick = async () => {
+  if (NB) {
+    try { const r = await NB.saveIgc({ name: igcName(lastRec), content: $('igcText').value }); $('igcInfo').textContent = 'Gespeichert unter ' + r.path + '.'; }
+    catch (e) { $('igcInfo').textContent = 'Speichern fehlgeschlagen: ' + (e.message || e); }
+    return;
+  }
+  try {
+    const url = URL.createObjectURL(new Blob([$('igcText').value], { type: 'application/octet-stream' }));
+    const a = document.createElement('a'); a.href = url; a.download = igcName(lastRec); document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {}
+};
+$('igcCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('igcText').value); $('igcCopy').textContent = 'Kopiert'; }
+  catch (e) { $('igcText').select(); }
+  setTimeout(() => $('igcCopy').textContent = 'Kopieren', 1500);
+};
+$('igcClose').onclick = () => $('igcDlg').close();
+if (NB) { const sh = document.createElement('button'); sh.type = 'button'; sh.textContent = 'Teilen';
+  sh.onclick = () => NB.shareIgc({ name: igcName(lastRec), content: $('igcText').value }).catch(e => $('igcInfo').textContent = 'Teilen fehlgeschlagen: ' + (e.message || e));
+  $('igcCopy').after(sh); }
+// In der App gibt es kein Web Bluetooth; dort übernimmt das eingebaute Barometer
+if (!navigator.bluetooth && NATIVE) $('bleBtn').hidden = true;
+
+/* ---------- Vario-Ton (Web Audio) ---------- */
+let ac = null, osc = null, gain = null, soundOn = false, beepPhase = 0, lastTone = 0;
+function initAudio() {
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  osc = ac.createOscillator(); osc.type = 'square';
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  gain = ac.createGain(); gain.gain.value = 0;
+  osc.connect(lp).connect(gain).connect(ac.destination); osc.start();
+}
+function toneTick(v) {
+  if (!ac) return;
+  const now = ac.currentTime, dt = lastTone ? Math.min(0.1, now - lastTone) : 0.02; lastTone = now;
+  const vol = soundOn ? (S.vol / 100) * 0.35 : 0;
+  let target = 0, freq = 600;
+  if (v >= S.climb) {
+    // Steigen: Tonhöhe und Piepsrate steigen mit dem Steigwert (XCTrack-ähnlich)
+    freq = Math.min(1800, 620 + 140 * v);
+    const period = Math.max(0.11, 0.55 - 0.07 * v);
+    beepPhase = (beepPhase + dt / period) % 1;
+    target = beepPhase < 0.55 ? vol : 0;
+  } else if (v <= S.sink) {
+    freq = Math.max(180, 380 + 40 * v); // Sinkalarm: tiefer Dauerton
+    target = vol * 0.8; beepPhase = 0;
+  } else beepPhase = 0;
+  osc.frequency.setTargetAtTime(freq, now, 0.03);
+  gain.gain.setTargetAtTime(target, now, 0.008);
+}
+$('soundBtn').onclick = async () => {
+  if (!ac) initAudio();
+  if (ac.state === 'suspended') await ac.resume();
+  soundOn = !soundOn;
+  $('soundBtn').setAttribute('aria-pressed', soundOn); $('soundBtn').classList.toggle('off', !soundOn);
+  $('soundBtn').setAttribute('aria-label', soundOn ? 'Vario-Ton ausschalten' : 'Vario-Ton einschalten');
+  $('soundWaves').setAttribute('opacity', soundOn ? 1 : 0); $('soundX').setAttribute('opacity', soundOn ? 0 : 1);
+};
+
+/* ---------- Bildschirm wach halten ---------- */
+let wl = null;
+async function wake() { try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => wl = null); } } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && source !== 'sim') wake(); });
+
+/* ---------- Anzeige ---------- */
+const BAR_MAX = 5;
+(function buildBar() {
+  const b = $('bar');
+  for (let v = -BAR_MAX; v <= BAR_MAX; v++) {
+    const t = document.createElement('div'); t.className = 'tick' + (v === 0 ? ' zero' : v % 2 === 0 ? ' major' : ''); t.style.top = ((BAR_MAX - v) / (2 * BAR_MAX) * 100) + '%';
+    if (v % 2 === 0 && Math.abs(v) < BAR_MAX) { const s = document.createElement('span'); s.textContent = v > 0 ? '+' + v : v; t.appendChild(s); }
+    b.appendChild(t);
+  }
+  const f = document.createElement('div'); f.className = 'fill'; f.id = 'barFill'; b.appendChild(f);
+  const a = document.createElement('div'); a.className = 'avg'; a.id = 'barAvg'; b.appendChild(a);
+})();
+const barY = v => ((BAR_MAX - Math.max(-BAR_MAX, Math.min(BAR_MAX, v))) / (2 * BAR_MAX) * 100);
+
+let vDisp = 0, lastFrame = performance.now(), lastText = 0;
+function avgOver(sec) {
+  if (hist.length < 2) return 0;
+  const last = hist[hist.length - 1]; let first = last;
+  for (let i = hist.length - 1; i >= 0 && last.t - hist[i].t <= sec * 1000; i--) first = hist[i];
+  const dt = (last.t - first.t) / 1000; return dt > 2 ? (last.h - first.h) / dt : last.v;
+}
+function fmtTime(ms) { const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60; return (h ? h + ':' + pad(m, 2) : m) + ':' + pad(s % 60, 2); }
+
+function frame(now) {
+  const dt = Math.min(0.2, (now - lastFrame) / 1000); lastFrame = now;
+  const tau = source === 'gps' && !accelOn ? 1.6 : 0.7;
+  vDisp += (kf.v - vDisp) * (1 - Math.exp(-dt / tau));
+  toneTick(vDisp);
+  if (now - lastText > 150) {
+    lastText = now;
+    const v = vDisp, el = $('vario');
+    const vs = (v >= 0.05 ? '+' : v <= -0.05 ? '−' : '') + Math.abs(v).toFixed(1), vc = 'v' + (v >= S.climb ? ' up' : v <= -0.5 ? ' down' : '');
+    el.textContent = vs; el.className = vc; $('vario2').textContent = vs; $('vario2').className = vc;
+    const f = $('barFill'), y0 = barY(0), y1 = barY(v);
+    f.style.top = Math.min(y0, y1) + '%'; f.style.height = Math.abs(y1 - y0) + '%'; f.style.background = v >= 0 ? 'var(--climb)' : 'var(--sink)';
+    const a30 = avgOver(30), as = (a30 >= 0 ? '+' : '−') + Math.abs(a30).toFixed(1), acl = 'v' + (a30 >= 0.2 ? ' up' : a30 <= -0.5 ? ' down' : '');
+    $('avg30').textContent = as; $('avg30').className = acl; $('avg2').textContent = as; $('avg2').className = acl; $('barAvg').style.top = barY(a30) + '%';
+    $('alt').innerHTML = kf.init ? Math.round(kf.h + (altOffset || 0)) + '<small>m</small>' : '–<small>m</small>';
+    $('agl').innerHTML = kf.init && takeoffAlt != null ? Math.round(kf.h - takeoffAlt) + '<small>m</small>' : '–<small>m</small>';
+    $('spd').innerHTML = fix ? Math.round(fix.spd * 3.6) + '<small>km/h</small>' : '–<small>km/h</small>';
+    $('hdg').innerHTML = fix ? pad(fix.hdg, 3) + '<small>°</small>' : '–<small>°</small>';
+    $('alt2').innerHTML = $('alt').innerHTML;
+    $('wind').innerHTML = wind ? Math.round(wind.sp * 3.6) + '<small>aus ' + pad(wind.from, 3) + '°</small>' : '–';
+    const a10 = avgOver(10);
+    $('ld').textContent = fix && a10 < -0.3 && fix.spd > 3 ? (fix.spd / -a10).toFixed(1) : '–';
+    $('wind2').innerHTML = wind ? Math.round(wind.sp * 3.6) + '<small>km/h</small>' : '–';
+    const ft = rec ? fmtTime(Date.now() - rec.start) : '0:00';
+    $('timeChip').textContent = ft; $('ftime').textContent = ft;
+    const d = new Date(); $('clock').textContent = pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2);
+  }
+  drawTA();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- Thermikassistent ---------- */
+const cv = $('ta'), cx = cv.getContext('2d');
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+let colors = {}; const readColors = () => { colors = { ink: css('--ink'), muted: css('--muted'), line: css('--line'), climb: css('--climb'), sink: css('--sink'), accent: css('--accent') }; };
+readColors(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+function drawTA() {
+  const W = cv.width, H = cv.height, c = W / 2;
+  cx.clearRect(0, 0, W, H);
+  const RANGE = 160, k = (W / 2 - 24) / RANGE; // Meter -> Pixel
+  cx.strokeStyle = colors.line; cx.lineWidth = 2;
+  for (let r = 50; r <= 150; r += 50) { cx.beginPath(); cx.arc(c, c, r * k, 0, Math.PI * 2); cx.stroke(); }
+  cx.fillStyle = colors.muted; cx.font = '600 22px ' + getComputedStyle(document.body).fontFamily; cx.textAlign = 'center';
+  cx.fillText('N', c, 34);
+  if (!hist.length) { cx.fillText('Warte auf Positionsdaten …', c, c + 8); return; }
+  const me = hist[hist.length - 1], tNow = me.t;
+  // Spur der letzten 90 s, eingefärbt nach Steigen
+  let wx = 0, wy = 0, ws = 0;
+  for (const p of hist) {
+    const age = (tNow - p.t) / 1000; if (age > 90) continue;
+    const x = c + (p.x - me.x) * k, y = c - (p.y - me.y) * k;
+    const s = Math.min(1, Math.abs(p.v) / 3);
+    cx.globalAlpha = 0.25 + 0.75 * (1 - age / 90);
+    cx.fillStyle = p.v >= 0 ? colors.climb : colors.sink;
+    cx.beginPath(); cx.arc(x, y, 4 + 12 * s, 0, Math.PI * 2); cx.fill();
+    if (p.v > 0.2 && age < 60) { const w = p.v * p.v; wx += p.x * w; wy += p.y * w; ws += w; }
+  }
+  cx.globalAlpha = 1;
+  // geschätzter Thermikkern, mit dem Wind versetzt
+  if (ws > 0) {
+    let kx = wx / ws, ky = wy / ws;
+    if (wind) { kx += wind.wx * 20; ky += wind.wy * 20; }
+    const x = c + (kx - me.x) * k, y = c - (ky - me.y) * k;
+    cx.strokeStyle = colors.climb; cx.lineWidth = 4; cx.setLineDash([10, 8]);
+    cx.beginPath(); cx.moveTo(c, c); cx.lineTo(x, y); cx.stroke(); cx.setLineDash([]);
+    cx.beginPath(); cx.arc(x, y, 18, 0, Math.PI * 2); cx.stroke();
+    cx.beginPath(); cx.arc(x, y, 5, 0, Math.PI * 2); cx.fillStyle = colors.climb; cx.fill();
+    $('taScale').textContent = 'Kern ' + Math.round(Math.hypot(kx - me.x, ky - me.y)) + ' m';
+  } else $('taScale').textContent = 'Wind';
+  // Windpfeil am Rand
+  if (wind && wind.sp > 0.5) {
+    const r = (wind.from + 180) * Math.PI / 180, L = 46, bx = 54, by = c;
+    cx.strokeStyle = colors.accent; cx.fillStyle = colors.accent; cx.lineWidth = 5;
+    const ex = bx + Math.sin(r) * L / 2, ey = by - Math.cos(r) * L / 2;
+    cx.beginPath(); cx.moveTo(bx - Math.sin(r) * L / 2, by + Math.cos(r) * L / 2); cx.lineTo(ex, ey); cx.stroke();
+    cx.beginPath(); cx.moveTo(ex, ey); cx.lineTo(ex - Math.sin(r - 0.5) * 16, ey + Math.cos(r - 0.5) * 16); cx.lineTo(ex - Math.sin(r + 0.5) * 16, ey + Math.cos(r + 0.5) * 16); cx.closePath(); cx.fill();
+    cx.fillText('Wind', bx, by + 50);
+  }
+  // Gleitschirm-Symbol in Flugrichtung
+  const h = me.trk * Math.PI / 180;
+  cx.save(); cx.translate(c, c); cx.rotate(h);
+  cx.fillStyle = colors.ink; cx.beginPath(); cx.moveTo(0, -22); cx.lineTo(13, 14); cx.lineTo(0, 7); cx.lineTo(-13, 14); cx.closePath(); cx.fill();
+  cx.restore();
+}
+
+/* ---------- Bedienung ---------- */
+$('gpsBtn').onclick = startGPS;
+$('simBtn').onclick = startSim;
+$('bleBtn').onclick = startBLE;
+$('recBtn').onclick = () => rec ? recStop() : recStart(false);
+$('igcBtn').onclick = showIGC;
+$('zeroBtn').onclick = () => { if (kf.init) takeoffAlt = kf.h; };
+$('setBtn').onclick = () => {
+  $('sClimb').value = S.climb; $('sSink').value = S.sink; $('sVol').value = S.vol; $('sQnh').value = S.qnh; $('sPilot').value = S.pilot; $('sGlider').value = S.glider;
+  $('setDlg').showModal();
+};
+$('setForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const num = (id, d) => { const v = parseFloat($(id).value); return isNaN(v) ? d : v; };
+  S.climb = num('sClimb', DEF.climb); S.sink = num('sSink', DEF.sink); S.vol = Math.max(0, Math.min(100, num('sVol', DEF.vol)));
+  S.qnh = num('sQnh', DEF.qnh); S.pilot = $('sPilot').value.trim(); S.glider = $('sGlider').value.trim();
+  saveS(); $('setDlg').close();
+});
+$('themeBtn').onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  S.theme = dark ? 'light' : 'dark'; document.documentElement.dataset.theme = S.theme; saveS(); readColors();
+};
+
+const pagesEl = $('pages'), tabs = [...document.querySelectorAll('.tabs button')];
+tabs.forEach(b => b.onclick = () => pagesEl.scrollTo({ left: +b.dataset.p * pagesEl.clientWidth, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
+pagesEl.addEventListener('scroll', () => { const i = Math.round(pagesEl.scrollLeft / pagesEl.clientWidth); tabs.forEach((b, j) => b.setAttribute('aria-selected', i === j)); }, { passive: true });
+
+startSim();
+requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.Capacitor) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Thermik Vario</string>
+    <string name="title_activity_main">Thermik Vario</string>
+    <string name="package_name">de.thermikvario.app</string>
+    <string name="custom_url_scheme">de.thermikvario.app</string>
+</resources>

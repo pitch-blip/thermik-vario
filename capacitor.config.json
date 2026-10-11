@@ -1,0 +1,6 @@
+{
+  "appId": "de.thermikvario.app",
+  "appName": "Thermik Vario",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

@@ -1,0 +1,57 @@
+name: Android-APK bauen
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Web-App in das Android-Projekt kopieren
+        run: npx cap sync android
+
+      - name: APK bauen
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: APK umbenennen
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk thermik-vario.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thermik-vario-apk
+          path: thermik-vario.apk
+
+      - name: Als Release veröffentlichen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" thermik-vario.apk \
+            --title "Thermik Vario Build ${{ github.run_number }}" \
+            --notes "APK zum Installieren auf Android. Commit ${GITHUB_SHA::7}." \
+            --latest
